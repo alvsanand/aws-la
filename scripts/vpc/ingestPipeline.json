@@ -6,13 +6,20 @@
         "field": "message",
         "patterns":
           [
-            "^%{TIMESTAMP_ISO8601:timestamp} %{NONNEGINT:version} %{DATA:account-id} %{DATA:interface-id} (?:-|%{IPV4:source_ip_address}) (?:-|%{IPV4:dest_ip_address}) (?:-|%{NUMBER:source_port}) (?:-|%{NUMBER:dest_port}) (?:-|%{NUMBER:protocol}) (?:-|%{NUMBER:packets}) (?:-|%{NUMBER:bytes}) %{NONNEGINT:start:int} %{NONNEGINT:end:int} %{DATA:action} %{DATA:log-status}$"
+            "^%{NONNEGINT:version} %{DATA:account-id} %{DATA:interface-id} (?:-|%{IPV4:source_ip_address}) (?:-|%{IPV4:dest_ip_address}) (?:-|%{NUMBER:source_port}) (?:-|%{NUMBER:dest_port}) (?:-|%{NUMBER:protocol}) (?:-|%{NUMBER:packets}) (?:-|%{NUMBER:bytes}) %{NONNEGINT:start:int} %{NONNEGINT:end:int} %{DATA:action} %{DATA:log-status}$"
           ]
       }
     },
     {
       "script": {
-        "inline": "ctx.duration = (ctx.end - ctx.start); ctx.start = ctx.start.toString(); ctx.end = ctx.end.toString();"
+        "inline": "ctx.duration = (ctx.end - ctx.start); ctx.start = ctx.start.toString(); ctx.end = ctx.end.toString(); ctx.time = ctx.start.toString();"
+      }
+    },
+    {
+      "date" : {
+        "field" : "time",
+        "target_field" : "timestamp",
+        "formats" : ["UNIX"]
       }
     },
     {
@@ -43,6 +50,11 @@
     {
       "remove": {
         "field": "end"
+      }
+    },
+    {
+      "remove": {
+        "field": "time"
       }
     }
   ]

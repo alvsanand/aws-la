@@ -1,4 +1,5 @@
 from elasticsearch import Elasticsearch, helpers
+from elasticsearch.helpers.errors import BulkIndexError
 import optparse
 import requests
 import json
@@ -9,7 +10,7 @@ import sys
 
 def createIndexAndMapping():
     # Mapping Name: options.index_name
-    print "Creating mapping in ES for index: %s" % (options.index_name)
+    print("Creating mapping in ES for index: %s" % (options.index_name))
 
     #open mappings file
     with open(options.script_dir + 'mapping.json') as f:
@@ -37,8 +38,8 @@ def createIndexAndMapping():
 
     """
 
-    mapping_index_name = mapping.keys()[0]                                                # name of the index in the mapping file (ie: 'elb_logs')
-    mapping_index_type = mapping[mapping_index_name]['mappings'].keys()[0]                # name of the index type in the mapping file (should be the same as index name)
+    mapping_index_name = list(mapping.keys())[0]                                                # name of the index in the mapping file (ie: 'elb_logs')
+    mapping_index_type = list(mapping[mapping_index_name]['mappings'].keys())[0]                # name of the index type in the mapping file (should be the same as index name)
     properties_data = mapping[mapping_index_name]['mappings'][mapping_index_type].copy()  # this is the mapping data that we need
 
     mapping = {'mappings' : { options.index_type : properties_data } }                    # this is the new mapping object with the correct index name and type for this log type
@@ -47,7 +48,7 @@ def createIndexAndMapping():
     es.indices.create(index=options.index_name, ignore=400, body=mapping)
 
 def putIngestPipeline():
-    print 'Creating Ingest Pipeline for index: ' + options.index_name
+    print('Creating Ingest Pipeline for index: ' + options.index_name)
 
     #open mappings file
     with open(options.script_dir + 'ingestPipeline.json') as f:
@@ -56,7 +57,7 @@ def putIngestPipeline():
     es.ingest.put_pipeline(id=options.index_name, body=pipeline)
 
 def createKibanaIndexPattern():
-    print "Creating new index-pattern in .kibana index"
+    print("Creating new index-pattern in .kibana index")
 
     # Create the index pattern
     url = 'http://' + options.es_host + ':5601/elasticsearch/.kibana/index-pattern/' + options.index_name
@@ -66,7 +67,7 @@ def createKibanaIndexPattern():
     r = requests.post(url, data=payload, params=params_payload, headers=headers)
 
 
-    print "Setting formatted fields on index-pattern"
+    print("Setting formatted fields on index-pattern")
 
     #open file with objects
     with open(options.script_dir + 'kibana-index-data.json') as f:
@@ -85,7 +86,7 @@ def createKibanaIndexPattern():
                 r = requests.post(url, data=payload, headers=headers)
 
 def setKibanaDefaultIndex():
-    print "Setting index-pattern as default index"
+    print("Setting index-pattern as default index")
 
     # Set the index as default
     url = 'http://' + options.es_host + ':5601/elasticsearch/.kibana/config/5.4.0/_update'
@@ -94,22 +95,22 @@ def setKibanaDefaultIndex():
     r = requests.post(url, data=payload, headers=headers)
 
 def deleteKibanaIndexPatterns():
-    print "Deleting useless index-patterns in .kibana index"
+    print("Deleting useless index-patterns in .kibana index")
 
-    print "Deleting index-pattern: .ml-anomalies-*"
+    print("Deleting index-pattern: .ml-anomalies-*")
     # build request
     url = 'http://' + options.es_host + ':5601/elasticsearch/.kibana/index-pattern/.ml-anomalies-*'
     headers = { 'kbn-version': '5.4.0' }
     r = requests.delete(url, headers=headers)
 
-    print "Deleting index-pattern: .ml-notifications"
+    print("Deleting index-pattern: .ml-notifications")
     # build request
     url = 'http://' + options.es_host + ':5601/elasticsearch/.kibana/index-pattern/.ml-notifications'
     headers = { 'kbn-version': '5.4.0' }
     r = requests.delete(url, headers=headers)
 
 def importObjectsToKibana():
-    print "importing saved objects into Kibana"
+    print("importing saved objects into Kibana")
     DashboardId = ""
 
     #open file with objects
@@ -134,23 +135,47 @@ def processFiles(f):
     # list for bulk documents
     documents = []
 
-    for log_line in f:
-        # Create the body and sanitize
-        source = {"message": log_line.strip('\n') }
-        body = {"_index": options.index_name, "_type": options.index_name, "pipeline": options.index_name, "_source": source }
+    for _log_line in f.readlines()[1:]:
+        log_line = _log_line.decode(encoding='utf-8') 
+        try:
+            # Create the body and sanitize
+            source = {"message": log_line.strip('\n') }
+            body = {"_index": options.index_name, "_type": options.index_name, "pipeline": options.index_name, "_source": source }
 
-        # append record to list before bulk send to ES
-        documents.append(body)
-        options.totalDocCount +=1
+            # append record to list before bulk send to ES
+            documents.append(body)
+            options.totalDocCount +=1
 
-        if len(documents) >= options.bulk_limit:
-            # bulk send all our entries
+            if len(documents) >= options.bulk_limit:
+                # bulk send all our entries
+                status = helpers.parallel_bulk(es, documents)
+
+                # look through each result for status
+                for i in status:
+                    if i[0] == False:
+                        print("There was an error importing a record.  Error: ", i[1])
+
+                # Using this to have the doc count stay on one line and continually be updated
+                sys.stdout.write("Total Documents sent to Elasticsearch: " + str(options.totalDocCount) + "\r")
+                sys.stdout.flush()
+
+                # now clean out the document list
+                documents[:] = []
+        except BulkIndexError as err:
+             print("There was an error importing a record. Error: %s" % (json.dumps(err.errors, indent=2)))
+        except:
+             print("There was an error importing a record[%s]. Error: %s" % (log_line, sys.exc_info()[0]))
+
+    # If we've made it here, then the file ended, and it's possible we still have documents in documents list.  Need to send what we have
+    if len(documents) > 0:
+        # bulk send all our entries
+        try:
             status = helpers.parallel_bulk(es, documents)
 
             # look through each result for status
             for i in status:
                 if i[0] == False:
-                    print "There was an error importing a record.  Error: ", i[1]
+                    print("There was an error importing a record.  Error: ", i[1])
 
             # Using this to have the doc count stay on one line and continually be updated
             sys.stdout.write("Total Documents sent to Elasticsearch: " + str(options.totalDocCount) + "\r")
@@ -158,29 +183,16 @@ def processFiles(f):
 
             # now clean out the document list
             documents[:] = []
-
-    # If we've made it here, then the file ended, and it's possible we still have documents in documents list.  Need to send what we have
-    if len(documents) > 0:
-        # bulk send all our entries
-        status = helpers.parallel_bulk(es, documents)
-
-        # look through each result for status
-        for i in status:
-            if i[0] == False:
-                print "There was an error importing a record.  Error: ", i[1]
-
-        # Using this to have the doc count stay on one line and continually be updated
-        sys.stdout.write("Total Documents sent to Elasticsearch: " + str(options.totalDocCount) + "\r")
-        sys.stdout.flush()
-
-        # now clean out the document list
-        documents[:] = []
+        except BulkIndexError as err:
+             print("There was an error importing a record. Error: %s" % (json.dumps(err.errors, indent=2)))
+        except:
+             print("There was an error importing a record[%s]. Error: %s" % (log_line, sys.exc_info()[0]))
 
     # print the final doc count before moving out of the function
     sys.stdout.write("Total Documents sent to Elasticsearch: " + str(options.totalDocCount) + "\r")
 
 def loadFiles():
-    print "Begin importing log files"
+    print("Begin importing log files")
 
     #local vars
     failure = False
@@ -189,11 +201,11 @@ def loadFiles():
     try:
         next(os.walk(options.log_directory))
     except:
-        print ""
-        print 'The directory \'' + options.log_directory + '\' doesn\'t seem to contain any log files.  Please check the --logdir argument again'
-        print ""
-        print "No logs imported!"
-        print ""
+        print("")
+        print('The directory \'' + options.log_directory + '\' doesn\'t seem to contain any log files.  Please check the --logdir argument again')
+        print("")
+        print("No logs imported!")
+        print("")
         failure = True
 
     if not failure:
@@ -207,29 +219,29 @@ def loadFiles():
                     if log_file_extension == '.gz':
 
                         with gzip.open(root + '/' + log_file, 'rb') as f:
-                            print "Importing log file: ", root + "/" + log_file
+                            print("Importing log file: ", root + "/" + log_file)
                             processFiles(f)
 
                     elif log_file_extension == '.log':
 
                         with open(root + '/' + log_file, 'rb') as f:
-                            print "Importing log file: ", root + "/" + log_file
+                            print("Importing log file: ", root + "/" + log_file)
                             processFiles(f)
 
                     elif log_file_extension == '':
 
                         with open(root + '/' + log_file, 'rb') as f:
-                            print "Importing log file: ", root + "/" + log_file
+                            print("Importing log file: ", root + "/" + log_file)
                             processFiles(f)
 
                     else:
                         # don't know how we got here, but just in case
                         # wrong file type. Will not import this log
-                        print "File: " + log_file + " is not the correct format. File need to end with *" + log_file_extension
+                        print("File: " + log_file + " is not the correct format. File need to end with *" + log_file_extension)
 
                 else:
                     # wrong file type. Will not import this log
-                    print "File: " + log_file + " is not the correct format. File need to end with *" + log_file_extension
+                    print("File: " + log_file + " is not the correct format. File need to end with *" + log_file_extension)
 
         # print the final doc count before moving out of the function
         sys.stdout.write("Total Documents sent to Elasticsearch: " + str(options.totalDocCount) + "\r")
@@ -327,8 +339,8 @@ options.index_type = options.index_name
 options.totalDocCount = 0
 
 
-print ""
-print "Beginning import process"
+print("")
+print("Beginning import process")
 
 #Create elasticsearch object
 es = Elasticsearch(options.es_host)
@@ -372,19 +384,19 @@ else:
 
 
 #Time to end this.  Give them the blurb
-print ""
-print "=========================================================="
-print "Done!"
-print "=========================================================="
-print ""
-print "Next Step:"
-print "Browse to Kibana by opening the following link:"
-print ""
-print url
-print ""
-print "Hint: you can use cmd + double-click on the above link to open it from the terminal"
-print ""
-print "Dont forget to set the correct time window in the top right corner of Kibana in order to find all of your data.  The link above will show the last 24 hours of log data, but that might need to be expanded."
-print ""
-print "=========================================================="
-print ""
+print("")
+print("==========================================================")
+print("Done!")
+print("==========================================================")
+print("")
+print("Next Step:")
+print("Browse to Kibana by opening the following link:")
+print("")
+print(url)
+print("")
+print("Hint: you can use cmd + double-click on the above link to open it from the terminal")
+print("")
+print("Dont forget to set the correct time window in the top right corner of Kibana in order to find all of your data.  The link above will show the last 24 hours of log data, but that might need to be expanded.")
+print("")
+print("==========================================================")
+print("")

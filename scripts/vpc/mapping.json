@@ -31,7 +31,7 @@
             "type":"integer"
           },
           "bytes":{
-            "type":"integer"
+            "type":"long"
           },
           "start_time":{
             "type":"date"

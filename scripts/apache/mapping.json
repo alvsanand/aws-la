@@ -28,7 +28,7 @@
             "type":"integer"
           },
           "bytes":{
-            "type":"integer"
+            "type":"long"
           },
           "clientip":{
             "type":"ip"

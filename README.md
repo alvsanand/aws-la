@@ -38,16 +38,25 @@ The script configures everything that is needed in the ELK stack:
 
 ## Installation Steps
 
-- Install [Docker for Windows][docker-for-windows] or [Docker for Mac][docker-for-mac]
+- Install Docker, [Docker for Windows][docker-for-windows] or [Docker for Mac][docker-for-mac]
+- Install python3
 - Clone this git repository:
 
   `git clone https://github.com/mike-mosher/aws-la.git && cd aws-la`
 
-- Install requirements:
+- Install requirements (Virtualenv):
 
-  `pip install -r ./requirements.txt`
+  ``` bash
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r ./requirements.txt
+  ```
 
 ## Running the Script
+
+- Fix Elasticsearch error (Linux):
+
+  `sudo sysctl -w vm.max_map_count=262144`
 
 - Bring the docker environment up:
 
@@ -59,15 +68,18 @@ The script configures everything that is needed in the ELK stack:
 
 - Verify that Elasticsearch is running:
 
-  `curl -XGET localhost:9200/_cluster/health?pretty`
+  `bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:9200/_cluster/health?pretty)" != "200" ]]; do sleep 5; done'`
 
 - To run the script, specify the log type and directory containing the logs. For example, you could run the following command to import ELB Access Logs
 
-  `python importLogs.py --logtype elb --logdir ~/logs/elblogs/`
+  ``` bash
+  source .venv/bin/activate
+  python importLogs.py --logtype vpc --logdir ~/tmp/vpcflowlogs/
+  ```
 
 - Valid log types are specified by running the `--help` argument. Currently, the valid logtypes are the following:
 
-  ```
+  ``` text
   elb                 # ELB access logs
   alb                 # ALB access logs
   vpc                 # VPC flow logs
@@ -82,15 +94,15 @@ The script configures everything that is needed in the ELK stack:
 
 - You can import multiple log types in the same ELK cluster. Just run the command again with the new log type and log directory:
 
-  ```
-   python importLogs.py --logtype vpc --logdir ~/logs/vpc-flowlogs/
+  ``` bash
+   python2.7 importLogs.py --logtype vpc --logdir ~/logs/vpc-flowlogs/
   ```
 
 - When done, you can shutdown the containers:
 
   `docker-compose down -v`
 
-## Screenshots / Examples:
+## Screenshots / Examples
 
 - Python output: ![Python script output][cli-output]
 

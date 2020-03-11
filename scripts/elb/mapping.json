@@ -34,10 +34,10 @@
             "type":"integer"
           },
           "received_bytes":{
-            "type":"integer"
+            "type":"long"
           },
           "sent_bytes":{
-            "type":"integer"
+            "type":"long"
           },
           "request":{
             "type":"keyword"
