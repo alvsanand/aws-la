@@ -60,7 +60,7 @@ The script configures everything that is needed in the ELK stack:
 
 - Bring the docker environment up:
 
-  `docker-compose up -d`
+  `docker-compose -p elk_cluster_la_vpclogs up -d`
 
 - Verify that the containers are running:
 
@@ -100,7 +100,7 @@ The script configures everything that is needed in the ELK stack:
 
 - When done, you can shutdown the containers:
 
-  `docker-compose down -v`
+  `docker-compose -p elk_cluster_la_vpclogs down -v`
 
 ## Screenshots / Examples
 
