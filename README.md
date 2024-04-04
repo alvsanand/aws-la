@@ -58,6 +58,8 @@ The script configures everything that is needed in the ELK stack:
 
   `sudo sysctl -w vm.max_map_count=262144`
 
+- Fix Elasticsearch error (MacOS): https://docs.rancherdesktop.io/how-to-guides/increasing-open-file-limit/
+
 - Bring the docker environment up:
 
   `docker-compose -p elk_cluster_la_vpclogs up -d`
@@ -70,12 +72,9 @@ The script configures everything that is needed in the ELK stack:
 
   `bash -c 'while [[ "$(curl -s -o /dev/null -w ''%{http_code}'' localhost:9200/_cluster/health?pretty)" != "200" ]]; do sleep 5; done'`
 
-- To run the script, specify the log type and directory containing the logs. For example, you could run the following command to import ELB Access Logs
+- Browse to the link provided in the output by using `cmd + double-click`, or browse directly to the default Kibana page:
 
-  ``` bash
-  source .venv/bin/activate
-  python importLogs.py --logtype vpc --logdir ~/tmp/vpcflowlogs/
-  ```
+  `http://localhost:5601`
 
 - Valid log types are specified by running the `--help` argument. Currently, the valid logtypes are the following:
 
@@ -87,10 +86,6 @@ The script configures everything that is needed in the ELK stack:
   apache              # apache access log ('access_log')
   apache_archives     # apache access logs (gunzip compressed with logrotate)
   ```
-
-- Browse to the link provided in the output by using `cmd + double-click`, or browse directly to the default Kibana page:
-
-  `http://localhost:5601`
 
 - You can import multiple log types in the same ELK cluster. Just run the command again with the new log type and log directory:
 
